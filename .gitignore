@@ -26,3 +26,4 @@ xcuserdata/
 *.mobileprovision
 *.keystore
 *.jks
+android/.kotlin/
