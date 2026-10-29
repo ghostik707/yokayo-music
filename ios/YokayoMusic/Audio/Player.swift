@@ -36,6 +36,8 @@ final class Player: ObservableObject {
     var activeDeck: Deck { decks[active] }
     let masterEQ = Equalizer.make()
     let fxPlayer = AVAudioPlayerNode()
+    let fxTrack = AVAudioPlayerNode()       // трюки из звука самого трека: ролл, нарезка, стоп-пластинка
+    var lastRecipe: MixComposer.Recipe?
     let fxReverb = AVAudioUnitReverb()
 
     struct Prepared { let song: Song; let file: AVAudioFile; var analysis: TrackAnalysis? }
@@ -77,6 +79,8 @@ final class Player: ObservableObject {
         fxReverb.loadFactoryPreset(.largeHall); fxReverb.wetDryMix = 35
         engine.connect(fxPlayer, to: fxReverb, format: FXSynth.format)
         engine.connect(fxReverb, to: engine.mainMixerNode, format: FXSynth.format)
+        engine.attach(fxTrack)
+        engine.connect(fxTrack, to: engine.mainMixerNode, format: FXSynth.format)
         // общий эквалайзер между микшером и выходом
         engine.attach(masterEQ)
         let outFormat = engine.outputNode.inputFormat(forBus: 0)
@@ -305,6 +309,7 @@ final class Player: ObservableObject {
 
     func next() {
         guard !queue.isEmpty else { return }
+        MixBrain.shared.userSkipped()
         if settings.djEnabled, isPlaying, transition == nil, prepared?.analysis != nil, activeDeck.analysis != nil {
             beginTransition(beats: 16)
             return
@@ -348,6 +353,7 @@ final class Player: ObservableObject {
             try? engine.start()
         }
         if !fxPlayer.isPlaying { fxPlayer.play() }
+        if !fxTrack.isPlaying { fxTrack.play() }
         startTimer()
     }
 
@@ -587,7 +593,7 @@ final class Player: ObservableObject {
                 self.finishTransitionNow()
                 try? self.engine.start()
                 if wasPlaying {
-                    self.fxPlayer.play()
+                    self.fxPlayer.play(); self.fxTrack.play()
                     self.activeDeck.schedule(from: self.lastKnownTime)
                 }
             }

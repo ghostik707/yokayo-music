@@ -6,7 +6,7 @@ final class Deck {
     let varispeed = AVAudioUnitVarispeed()          // скорость вместе с тоном: стоп-плёнка, Sped up / Slowed
     let timePitch = AVAudioUnitTimePitch()
     let trim = AVAudioUnitEQ(numberOfBands: 0)   // нормализация громкости
-    let eq = AVAudioUnitEQ(numberOfBands: 3)
+    let eq = AVAudioUnitEQ(numberOfBands: 4)
     let delay = AVAudioUnitDelay()
     let reverb = AVAudioUnitReverb()
     let mixer = AVAudioMixerNode()
@@ -26,11 +26,13 @@ final class Deck {
     var bass: AVAudioUnitEQFilterParameters { eq.bands[0] }
     var highPass: AVAudioUnitEQFilterParameters { eq.bands[1] }
     var lowPass: AVAudioUnitEQFilterParameters { eq.bands[2] }
+    var mid: AVAudioUnitEQFilterParameters { eq.bands[3] }
 
     init() {
         bass.filterType = .lowShelf; bass.frequency = 180; bass.gain = 0; bass.bypass = false
         highPass.filterType = .highPass; highPass.frequency = 20; highPass.bypass = true
         lowPass.filterType = .lowPass; lowPass.frequency = 20000; lowPass.bypass = true
+        mid.filterType = .parametric; mid.frequency = 1500; mid.bandwidth = 1.6; mid.gain = 0; mid.bypass = false
         delay.wetDryMix = 0; delay.feedback = 45; delay.lowPassCutoff = 6000
         timePitch.rate = 1
         reverb.loadFactoryPreset(.largeHall2)
@@ -65,6 +67,7 @@ final class Deck {
 
     func resetFX() {
         bass.gain = 0
+        mid.gain = 0
         highPass.bypass = true; highPass.frequency = 20
         lowPass.bypass = true; lowPass.frequency = 20000
         delay.wetDryMix = 0

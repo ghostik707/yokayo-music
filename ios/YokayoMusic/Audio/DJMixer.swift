@@ -45,6 +45,7 @@ extension Player {
 
     /// Вызывается 30 раз в секунду.
     func djTick() {
+        MixBrain.shared.tick()
         if let tr = transition { updateTransition(tr); return }
         applyGlide()
         crossfadeTick()
@@ -110,7 +111,11 @@ extension Player {
         let to = decks[1 - active]
         let posA = from.currentTime
         // ручное «следующий»: переход сразу, со следующей сильной доли
-        if mix.aStart > posA + 1.5 {
+        if mix.aStart > posA + 1.5, mix.technique == .composed {
+            mix = DJPlanner.plan(a: aA, b: aB, rateA: realRate, titleA: current?.title ?? "", titleB: p.song.title,
+                                 variant: demoVariant, classic: false, beatsSetting: settings.djBeats, now: posA,
+                                 start: aA.downbeat(atOrAfter: posA + 0.35))
+        } else if mix.aStart > posA + 1.5 {
             mix.aStart = aA.downbeat(atOrAfter: posA + 0.35)
             if mix.overlapping {
                 mix.overlapBeats = min(mix.overlapBeats, 16); mix.tailBeats = min(mix.tailBeats, 8)
@@ -132,6 +137,11 @@ extension Player {
         func host(_ frac: Double) -> UInt64 { startHost + AVAudioTime.hostTime(forSeconds: max(0, beatReal * mix.totalBeats * frac)) }
 
         to.timePitch.rate = rateB
+        if let sc = mix.script {
+            applyLanes(sc.b, to: to, at: 0, script: sc, beatReal: beatReal)
+            to.schedule(from: mix.bStart, at: host(sc.bEnter / sc.total))
+            if let r = mix.recipe { MixBrain.shared.began(r); lastRecipe = r }
+        } else {
         switch mix.technique {
         case .bassSwap:
             to.mixer.outputVolume = 0; to.bass.gain = -26
@@ -140,9 +150,10 @@ extension Player {
             to.mixer.outputVolume = 0; to.bass.gain = -26
             to.highPass.bypass = false; to.highPass.frequency = 1200
             to.schedule(from: mix.bStart, at: startHost)
-        case .echoOut, .backspin, .fade:
+        case .echoOut, .backspin, .fade, .composed:
             to.mixer.outputVolume = 1
             to.schedule(from: mix.bStart, at: host(mix.swapAt))
+        }
         }
 
         transition = Transition(from: from, to: to, plan: mix, startHost: startHost, beatReal: beatReal,
@@ -157,6 +168,48 @@ extension Player {
         let gain = Float(settings.djFX)
         let swapHost = host(m.swapAt)
         func at(_ h: UInt64) -> AVAudioTime { AVAudioTime(hostTime: h) }
+
+        if let sc = m.script {
+            if !fxPlayer.isPlaying { fxPlayer.play() }
+            if !fxTrack.isPlaying { fxTrack.play() }
+            let trim = pow(10, from.trim.globalGain / 20)
+            func hostAt(_ beat: Double) -> AVAudioTime { at(host(beat / sc.total)) }
+            func slice(_ beat: Double, _ seconds: Double) -> AVAudioPCMBuffer? {
+                from.file.flatMap { DJBuffers.slice(of: $0.url, at: aStart + aA.beat * beat, seconds: seconds) }
+            }
+            for e in sc.events {
+                switch e {
+                case .synth(let kind, let x, let beats):
+                    guard gain > 0.01 else { continue }
+                    let buf: AVAudioPCMBuffer = switch kind {
+                    case .riser: FXSynth.scaled(FXSynth.riser(seconds: beatReal * beats), gain: 0.4 * gain)
+                    case .snareRoll: FXSynth.scaled(FXSynth.snareRoll(seconds: beatReal * beats, beat: beatReal), gain: 0.5 * gain)
+                    case .impact: FXSynth.scaled(FXSynth.impact(), gain: 0.6 * gain)
+                    case .crash: FXSynth.scaled(FXSynth.crash(), gain: 0.45 * gain)
+                    case .downlifter: FXSynth.scaled(FXSynth.downlifter(seconds: beatReal * beats), gain: 0.45 * gain)
+                    case .subDrop: FXSynth.scaled(FXSynth.subDrop(), gain: 0.55 * gain)
+                    }
+                    fxPlayer.scheduleBuffer(buf, at: hostAt(max(0, x)))
+                case .roll(let x, let beats):
+                    if let src = slice(x, aA.beat), let buf = DJBuffers.roll(from: src, beat: beatReal, beats: beats, gain: trim) {
+                        fxTrack.scheduleBuffer(buf, at: hostAt(x))
+                    }
+                case .gate(let x, let beats):
+                    if let src = slice(x, aA.beat * beats), let buf = DJBuffers.gate(src, beat: beatReal, gain: trim) {
+                        fxTrack.scheduleBuffer(buf, at: hostAt(x))
+                    }
+                case .brake(let x, let beats):
+                    if let src = slice(x, beatReal * beats), let buf = DJBuffers.tapeStop(from: src, seconds: beatReal * beats, gain: trim) {
+                        fxTrack.scheduleBuffer(buf, at: hostAt(x))
+                    }
+                case .spin(let x, let beats):
+                    if let src = slice(x - 1.2 / aA.beat, 1.2), let buf = DJBuffers.backspin(from: src, seconds: beatReal * beats, gain: trim) {
+                        fxTrack.scheduleBuffer(buf, at: hostAt(x))
+                    }
+                }
+            }
+            return
+        }
 
         if m.technique == .backspin {
             let spinBeats = 4.0
@@ -187,6 +240,11 @@ extension Player {
         func ramp(_ x0: Double, _ x1: Double) -> Double { max(0, min(1, (p - x0) / max(0.0001, x1 - x0))) }
         func fadeDB(_ k: Double) -> Float { Float(max(-96, 20 * log10(max(0.00001, cos(k * .pi / 2))))) }
 
+        if let sc = m.script {
+            let x = p * tr.beats
+            applyLanes(sc.a, to: a, at: x, script: sc, beatReal: tr.beatReal)
+            applyLanes(sc.b, to: b, at: x, script: sc, beatReal: tr.beatReal)
+        } else {
         switch m.technique {
         case .bassSwap:
             // B: за первые 4 такта плавно поднимается (без баса); на смене — бас B, A без баса
@@ -222,6 +280,9 @@ extension Player {
             let k = max(0, min(1, p))
             a.mixer.outputVolume = Float(cos(k * .pi / 2))
             b.mixer.outputVolume = Float(sin(k * .pi / 2))
+        case .composed:
+            break
+        }
         }
 
         // фаза B подтягивается к A, пока оба играют вместе
@@ -245,7 +306,29 @@ extension Player {
         if p >= 1 { completeTransition(tr) }
     }
 
+    /// Значения кривых сценария в доле `x` — на деку.
+    private func applyLanes(_ L: MixScript.DeckLanes, to d: Deck, at x: Double, script: MixScript, beatReal: Double) {
+        d.mixer.outputVolume = max(0, min(1, L.vol.at(x)))
+        d.eq.globalGain = max(-96, L.gain.at(x))
+        d.bass.gain = L.bass.at(x)
+        d.mid.gain = L.mid.at(x)
+        let hp = L.hp.at(x)
+        d.highPass.bypass = hp <= 21
+        d.highPass.frequency = max(20, hp)
+        let lp = L.lp.at(x)
+        d.lowPass.bypass = lp >= 19500
+        d.lowPass.frequency = min(20000, lp)
+        let e = L.echo.at(x)
+        if e > 0.5 {
+            d.delay.delayTime = min(2, beatReal * script.echoBeats)
+            d.delay.feedback = script.echoFeedback
+        }
+        d.delay.wetDryMix = e
+        d.reverb.wetDryMix = max(d.baseReverb, L.reverb.at(x))
+    }
+
     private func completeTransition(_ tr: Transition) {
+        if let r = tr.plan.recipe { MixBrain.shared.finished(r) }
         tr.from.stop()
         tr.from.resetFX()
         tr.from.timePitch.rate = 1
@@ -275,6 +358,7 @@ extension Player {
     func finishTransitionNow() {
         guard let tr = transition else { return }
         fxPlayer.stop(); fxPlayer.play()
+        fxTrack.stop(); fxTrack.play()
         if !tr.swapped {
             tr.to.unload()
             tr.from.resetFX()

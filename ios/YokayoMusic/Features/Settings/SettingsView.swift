@@ -338,10 +338,10 @@ struct DJSettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("Доли и сильные доли слышит своя нейросеть BeatNet — обучена с нуля и работает прямо на телефоне, без интернета", systemImage: "brain.head.profile")
                         Label("Разбирает каждый трек: темп, сетку битов, фразы, интро, дроп, аутро, тональность", systemImage: "waveform.badge.magnifyingglass")
-                        Label("Интро нового трека ложится на аутро старого, дроп — ровно на границу фразы", systemImage: "metronome.fill")
-                        Label("Басы никогда не звучат вместе — меняются на дропе", systemImage: "speaker.wave.2.fill")
-                        Label("Тональности конфликтуют — короткий фильтр-микс; сетка ненадёжна или темп разный — чистый уход в эхо", systemImage: "music.quarternote.3")
-                        Label("Никаких случайностей: одна и та же пара всегда звучит одинаково", systemImage: "checkmark.seal.fill")
+                        Label("Каждый переход сочиняется заново: ИИ собирает сотни вариантов из приёмов — фильтры, эхо, реверб, обмен басами, бит-ролл, нарезка, стоп-пластинка, перемотка, тишина перед дропом — и «прослушивает» их по энергии и басу обоих треков", systemImage: "wand.and.stars")
+                        Label("Басы не наслаиваются, громкость не проваливается, стиль подходит треку: мощный дроп — райзер и удар, спокойная пара — длинный мягкий микс", systemImage: "speaker.wave.2.fill")
+                        Label("Недавние переходы не повторяются", systemImage: "shuffle")
+                        Label("Учится на тебе: переключил трек сразу после перехода — такой будет реже; 👍/👎 в DJ-лаборатории", systemImage: "heart.text.square.fill")
                     }
                     .font(.footnote).foregroundStyle(.secondary)
                 }

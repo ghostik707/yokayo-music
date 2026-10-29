@@ -62,11 +62,12 @@ struct DJLabView: View {
                 .opacity(trackA == nil || trackB == nil ? 0.5 : 1)
                 .padding(.horizontal, 20)
                 if started {
-                    Text("🎲 — другой вариант: лучший → короткий фильтр-микс → уход в эхо.")
+                    Text("🎲 — ИИ сочинит другой переход для этой пары.")
                         .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 20)
                 }
 
                 if started || player.djStatus != nil { LiveDecks().padding(.horizontal, 20) }
+                if started, let r = player.lastRecipe { RateMix(recipe: r).padding(.horizontal, 20) }
             }
             .padding(.vertical, 16)
         }
@@ -280,5 +281,36 @@ struct TrackPickerSheet: View {
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Оценка перехода: 👍/👎 учат ИИ-композитора.
+private struct RateMix: View {
+    let recipe: MixComposer.Recipe
+    @State private var rated: Bool?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(rated == nil ? "Как переход?" : "Запомнил, спасибо").font(.subheadline.weight(.semibold))
+            Spacer()
+            ForEach([true, false], id: \.self) { good in
+                Button {
+                    MixBrain.shared.learn(recipe, good: good, strength: 1.5)
+                    rated = good
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                } label: {
+                    Image(systemName: good ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
+                        .font(.title3)
+                        .frame(width: 48, height: 40)
+                        .background((rated == good ? Color.neon.opacity(0.35) : Color.white.opacity(0.08)),
+                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(PressScale())
+                .disabled(rated != nil)
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onChange(of: recipe) { _, _ in rated = nil }
     }
 }

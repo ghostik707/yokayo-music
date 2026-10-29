@@ -2,7 +2,7 @@ import Foundation
 
 /// План перехода: что и в какой такт делает каждая дека.
 struct MixPlan: Equatable {
-    enum Technique: String { case bassSwap, filterSwap, echoOut, backspin, fade }
+    enum Technique: String { case bassSwap, filterSwap, echoOut, backspin, fade, composed }
 
     var technique: Technique
     var aStart: Double          // сек файла A: сильная доля, с которой начинается переход
@@ -17,16 +17,15 @@ struct MixPlan: Equatable {
     var reason: String
     var steps: [String]
     var variantTitle: String
+    var script: MixScript? = nil            // сценарий ИИ-композитора
+    var recipe: MixComposer.Recipe? = nil
 
     var totalBeats: Double { overlapBeats + tailBeats }
     var swapAt: Double { overlapBeats / totalBeats }
-    var overlapping: Bool { technique == .bassSwap || technique == .filterSwap || technique == .fade }
+    var overlapping: Bool { if let script { return script.blend }; return technique == .bassSwap || technique == .filterSwap || technique == .fade }
 }
 
-/// Диджей-планировщик. Без случайностей: одна и та же пара всегда сводится одинаково.
-/// Правила как у живого диджея: интро B ложится на аутро A, дроп B попадает
-/// на границу фразы A, басы никогда не звучат вместе, при ненадёжной сетке или
-/// несовместимом темпе — чистый уход в эхо вместо сведения по битам.
+/// Диджей-планировщик: «Классика» — один предсказуемый переход, режим ИИ — MixComposer.
 enum DJPlanner {
     static let variants = 3
 
@@ -50,15 +49,12 @@ enum DJPlanner {
     }
 
     static func plan(a: TrackAnalysis, b: TrackAnalysis, rateA: Double, titleA: String, titleB: String,
-                     variant: Int, classic: Bool, beatsSetting: Int, now: Double) -> MixPlan {
+                     variant: Int, classic: Bool, beatsSetting: Int, now: Double, start: Double? = nil) -> MixPlan {
         let bpmA = a.bpm * rateA
         let mult = [1.0, 2, 0.5].min { abs(bpmA / (b.bpm * $0) - 1) < abs(bpmA / (b.bpm * $1) - 1) }!
         let ratio = bpmA / (b.bpm * mult)
         let gridOK = a.confidence >= 0.5 && b.confidence >= 0.5
         let tempoOK = abs(ratio - 1) <= 0.08 && gridOK
-        let keyDist = TrackAnalysis.keyDistance(a, b)
-        let keysFit = (keyDist ?? 1) <= 1
-        let v = variant % variants
 
         let tA = "«\(titleA)»", tB = "«\(titleB)»"
         let tempoText = abs(ratio - 1) < 0.005
@@ -66,10 +62,6 @@ enum DJPlanner {
             : abs(ratio - 1) <= 0.08
             ? "темп \(Int(bpmA.rounded()))→\(Int((b.bpm * mult).rounded())) BPM, подгоню \(tB) на \(String(format: "%+.1f%%", (ratio - 1) * 100))"
             : "темп \(Int(bpmA.rounded()))→\(Int(b.bpm.rounded())) BPM"
-        let keyText: String = {
-            guard let ca = a.camelot, let cb = b.camelot else { return "тональность не определил" }
-            return keysFit ? "тональности \(ca)→\(cb) — гармонично" : "тональности \(ca)→\(cb) конфликтуют — наложение будет коротким"
-        }()
 
         // Классика — как в первой версии: 8 тактов с обменом басами перед концом
         if classic {
@@ -84,62 +76,8 @@ enum DJPlanner {
             return echoPlan(a: a, b: b, now: now, tA: tA, tB: tB, reason: tempoText, hot: false, variantTitle: "Классика")
         }
 
-        // Вариант 2 или нельзя сводить по битам — чистый уход в эхо
-        if !tempoOK || v == 2 {
-            let why = !gridOK ? "сетка битов у трека ненадёжна — сводить по долям не буду"
-                : abs(ratio - 1) > 0.08 ? "\(tempoText) — слишком разный для сведения по битам, сменю через эхо на сильной доле" : "вариант «эхо»"
-            let hiphop = bpmA < 105 && b.bpm < 105
-            return echoPlan(a: a, b: b, now: now, tA: tA, tB: tB, reason: why, hot: b.dropJump > 1.5,
-                            spin: hiphop && v == 2 && a.meanBarEnergy(a.outroStartBar - 4, a.outroStartBar) > 0.6,
-                            variantTitle: v == 2 ? "Эхо" : "Лучший")
-        }
-
-        // Сведение по битам. Длинный микс — только когда есть куда класть: интро у B и аутро у A.
-        // Иначе (рэп, поп без инструментальных хвостов) — короткий микс на 4 такта, чтобы куплеты не наслаивались.
-        let intro = b.introEndBar
-        let longBlend = intro >= 8 && a.outroFound
-        var overlapBars = longBlend ? min(intro, 16) : 4
-        var technique: MixPlan.Technique = .bassSwap
-        if !longBlend { technique = .filterSwap }
-        if !keysFit || v == 1 { overlapBars = min(overlapBars, longBlend ? 8 : 4); technique = .filterSwap }
-        overlapBars = max(4, (overlapBars / 4) * 4)
-
-        // B начинается так, чтобы его дроп пришёлся ровно на смену
-        let bStartBar = intro >= overlapBars ? intro - overlapBars : 0
-        let bDropBar = bStartBar + overlapBars
-        let bStart = bStartBar == 0 && intro == 0 ? b.mixIn : b.time(ofBar: bStartBar)
-
-        // Смена на A: начало его аутро (граница фразы), но так, чтобы переход успел до конца
-        let lastBar = a.lastSoundBar
-        let tailBars = technique == .bassSwap ? 4 : 2
-        var swapBar = a.outroStartBar
-        if swapBar + tailBars > lastBar { swapBar = lastBar - tailBars }
-        if swapBar - overlapBars < a.bar(at: now) + 2 { swapBar = max(a.bar(at: now) + 2 + overlapBars, swapBar) }
-        if swapBar + tailBars > lastBar + 2 {  // не помещается — короче
-            overlapBars = max(4, lastBar - tailBars - a.bar(at: now) - 2)
-            swapBar = lastBar - tailBars
-        }
-        let aStart = a.time(ofBar: swapBar - overlapBars)
-        let riser = b.dropJump >= 1.5
-        let impact = b.dropJump >= 1.9
-
-        var steps: [String] = []
-        if technique == .bassSwap {
-            steps.append("Такт 1: \(tB) входит без баса под \(tA) и плавно набирает громкость")
-            steps.append("Такт \(overlapBars + 1): \(bDropBar > 0 ? "дроп \(tB)" : "сильная доля") — меняю басы")
-            steps.append("Такты \(overlapBars + 1)–\(overlapBars + tailBars): \(tA) уходит в фильтр")
-        } else {
-            steps.append("Такт 1: \(tB) открывается из фильтра, \(tA) уходит в глухой низ")
-            steps.append("Такт \(overlapBars + 1): меняю басы, \(tA) гаснет")
-        }
-        if riser { steps.append("Последние такты перед дропом — райзер\(impact ? ", на дропе — удар" : "")") }
-
-        return MixPlan(technique: technique, aStart: aStart, bStart: bStart,
-                       overlapBeats: Double(overlapBars * 4), tailBeats: Double(tailBars * 4),
-                       synced: true, riser: riser, impact: impact, echoTail: 0.18,
-                       headline: technique == .bassSwap ? "Микс \(overlapBars) тактов · интро на аутро" : "Фильтр-микс \(overlapBars) тактов",
-                       reason: "\(tempoText); \(keyText)\(longBlend ? "" : "; без длинного интро/аутро — короткий микс")", steps: steps,
-                       variantTitle: v == 0 ? "Лучший" : "Короткий фильтр")
+        // ИИ: каждый переход сочиняется заново
+        return MixComposer.compose(a: a, b: b, rateA: rateA, ratio: ratio, titleA: titleA, titleB: titleB, now: now, start: start)
     }
 
     /// Уход в эхо: A на границе фразы улетает в эхо и фильтр, B входит на сильную долю.
