@@ -1,0 +1,28 @@
+# сборки
+build/
+DerivedData/
+dist/
+*.ipa
+*.apk
+*.aab
+android/.gradle/
+android/**/build/
+android/local.properties
+android/.idea/
+
+# обучение нейросети — не публикуется (в репозитории только готовые веса BeatNet.bin)
+BeatAI/
+
+# Xcode / macOS
+xcuserdata/
+*.xcuserstate
+.DS_Store
+
+# никаких секретов
+*.env
+*.pem
+*.key
+*.p12
+*.mobileprovision
+*.keystore
+*.jks

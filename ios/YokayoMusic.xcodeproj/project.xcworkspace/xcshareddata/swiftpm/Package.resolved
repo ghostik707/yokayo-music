@@ -1,0 +1,15 @@
+{
+  "originHash" : "881eafa734ebd59c05e3018fb568c79baad7783563b1a121b475523826535176",
+  "pins" : [
+    {
+      "identity" : "ym-api",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/p0rterB/YM-API",
+      "state" : {
+        "revision" : "00c3789895f6d6c04825e8ca496004bca072303e",
+        "version" : "0.7.1"
+      }
+    }
+  ],
+  "version" : 3
+}

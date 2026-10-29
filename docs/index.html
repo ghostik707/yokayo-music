@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yokayo Music</title>
+<meta name="description" content="Открытый клиент Яндекс Музыки в стиле Apple Music с ИИ-диджеем, который сводит треки прямо на телефоне.">
+<link rel="icon" href="img/star.png">
+<style>
+  :root {
+    --bg: #04060f; --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.09);
+    --text: #eef2ff; --muted: #9aa3c0; --neon: #4cc3ff; --deep: #3a5bff; --violet: #a46bff;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--text); font: 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; overflow-x: hidden; }
+  a { color: var(--neon); text-decoration: none; }
+  .glow { position: fixed; inset: -20% -10% auto; height: 90vh; background: radial-gradient(40% 50% at 70% 30%, rgba(58,91,255,.35), transparent 70%), radial-gradient(35% 40% at 20% 10%, rgba(76,195,255,.18), transparent 70%); pointer-events: none; z-index: 0; }
+  canvas#stars { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .wrap { position: relative; z-index: 1; max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .02em; color: var(--text); }
+  .brand img { width: 34px; height: 34px; filter: drop-shadow(0 0 10px var(--neon)); }
+  .gh { border: 1px solid var(--line); padding: 8px 14px; border-radius: 999px; color: var(--text); font-size: 15px; }
+  header { display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; align-items: center; padding: 48px 0 70px; }
+  h1 { font-size: clamp(40px, 7vw, 72px); line-height: 1.02; letter-spacing: -.03em; }
+  h1 span { background: linear-gradient(90deg, var(--neon), var(--deep), var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { color: var(--muted); font-size: 19px; margin: 20px 0 28px; max-width: 520px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 14px 22px; border-radius: 999px; font-weight: 700; }
+  .btn.primary { background: linear-gradient(90deg, var(--neon), var(--deep)); color: #020414; box-shadow: 0 10px 40px rgba(58,91,255,.45); }
+  .btn.ghost { border: 1px solid var(--line); color: var(--text); background: var(--card); }
+  .small { color: var(--muted); font-size: 14px; margin-top: 14px; }
+  .hero-star { position: relative; display: grid; place-items: center; aspect-ratio: 1; }
+  .hero-star img { width: 70%; filter: drop-shadow(0 0 40px var(--neon)) drop-shadow(0 0 90px var(--deep)); animation: float 6s ease-in-out infinite; }
+  .ring { position: absolute; inset: 12%; border-radius: 50%; border: 1px solid rgba(76,195,255,.25); animation: pulse 3.2s ease-out infinite; }
+  .ring:nth-child(2) { animation-delay: 1.1s; } .ring:nth-child(3) { animation-delay: 2.2s; }
+  @keyframes float { 50% { transform: translateY(-12px) rotate(6deg); } }
+  @keyframes pulse { from { transform: scale(.6); opacity: .9; } to { transform: scale(1.25); opacity: 0; } }
+  section { padding: 56px 0; }
+  h2 { font-size: clamp(28px, 4.5vw, 42px); letter-spacing: -.02em; margin-bottom: 10px; }
+  .sub { color: var(--muted); max-width: 640px; margin-bottom: 30px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 22px; }
+  .card .ic { font-size: 26px; margin-bottom: 10px; }
+  .card h3 { font-size: 18px; margin-bottom: 6px; }
+  .card p { color: var(--muted); font-size: 15px; }
+  .shots { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x mandatory; }
+  .shots img { height: 430px; border-radius: 26px; border: 1px solid var(--line); scroll-snap-align: start; flex: none; max-width: 85vw; object-fit: cover; object-position: top; }
+  .net { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: center; }
+  .net ol { padding-left: 20px; color: var(--muted); }
+  .net li { margin-bottom: 8px; }
+  .net li b { color: var(--text); }
+  .bars { display: flex; align-items: flex-end; gap: 4px; height: 160px; }
+  .bars i { flex: 1; background: linear-gradient(to top, var(--deep), var(--neon)); border-radius: 4px; animation: beat 1s ease-in-out infinite; }
+  @keyframes beat { 0%, 100% { height: 20%; } 15% { height: 100%; } 50% { height: 35%; } }
+  .os { text-align: center; }
+  .os .card { max-width: 720px; margin: 0 auto; text-align: left; }
+  code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; font-size: 14px; }
+  footer { color: var(--muted); font-size: 14px; padding: 40px 0 60px; border-top: 1px solid var(--line); text-align: center; }
+  @media (max-width: 820px) {
+    header, .net { grid-template-columns: 1fr; }
+    .hero-star { max-width: 320px; margin: 0 auto; order: -1; }
+    .grid { grid-template-columns: 1fr; }
+    .shots img { height: 360px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<canvas id="stars"></canvas>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#"><img src="img/star.png" alt="">YOKAYO</a>
+    <a class="gh" href="https://github.com/ghostik707/yokayo-music">GitHub ↗</a>
+  </nav>
+
+  <header>
+    <div>
+      <h1>Музыка, которая <span>сводится сама</span></h1>
+      <p class="lead">Открытый клиент Яндекс Музыки в стиле Apple Music. ИИ-диджей своей нейросетью слышит биты и сводит треки в непрерывный сет — прямо на телефоне, без серверов.</p>
+      <div class="btns">
+        <a class="btn primary" href="https://github.com/ghostik707/yokayo-music/releases/latest">Скачать для iPhone</a>
+        <a class="btn ghost" href="https://github.com/ghostik707/yokayo-music">Исходный код</a>
+      </div>
+      <p class="small">IPA для установки через eSign / AltStore · iOS 18+ · нужна подписка Яндекс Плюс</p>
+    </div>
+    <div class="hero-star"><div class="ring"></div><div class="ring"></div><div class="ring"></div><img src="img/star.png" alt="Звезда Yokayo"></div>
+  </header>
+
+  <section>
+    <h2>Всё, что нужно — и немного больше</h2>
+    <p class="sub">Знакомый каталог, «Моя волна» и плейлисты Яндекса, но в интерфейсе, который приятно открывать.</p>
+    <div class="grid">
+      <div class="card"><div class="ic">🎛️</div><h3>ИИ-диджей</h3><p>Интро нового трека ложится на аутро старого, басы меняются на дропе. Не сводится по темпу — красиво уходит в эхо.</p></div>
+      <div class="card"><div class="ic">🌊</div><h3>Живая «Моя волна»</h3><p>Карточка дышит в такт треку. Новые сессии волны — не одно и то же после каждого запуска.</p></div>
+      <div class="card"><div class="ic">🔒</div><h3>Обложка на весь экран</h3><p>Обложка на весь экран блокировки и анимированные обложки, если они есть у трека.</p></div>
+      <div class="card"><div class="ic">🎤</div><h3>Тексты караоке</h3><p>Синхронные тексты с заливкой слов и карточки строк для сторис.</p></div>
+      <div class="card"><div class="ic">🎚️</div><h3>Эквалайзер 10 полос</h3><p>Пресеты, свой профиль, ровная громкость между треками и кроссфейд.</p></div>
+      <div class="card"><div class="ic">📁</div><h3>Своя музыка</h3><p>MP3, FLAC, M4A из «Файлов», свои плейлисты, виджеты, Siri и Пункт управления.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Как это выглядит</h2>
+    <div class="shots">
+      <img src="img/home-top.png" alt="Главная с «Моей волной»">
+      <img src="img/wave-top.png" alt="Анимация нажатия на «Мою волну»">
+      <img src="img/eq.png" alt="Эквалайзер на 10 полос">
+    </div>
+  </section>
+
+  <section class="net">
+    <div>
+      <h2>BeatNet — своя нейросеть</h2>
+      <p class="sub">Чтобы сводить по битам, нужно точно знать, где они. Для этого в Yokayo своя маленькая нейросеть.</p>
+      <ol>
+        <li><b>Слышит ~12 секунд вокруг</b> каждого момента: 8 расширяющихся свёрток, 31 тыс. параметров.</li>
+        <li><b>Находит доли и сильные доли</b>, из них — точный темп и сетку тактов.</li>
+        <li><b>Честно говорит, когда не уверена</b> — и тогда диджей не сводит по битам, а меняет трек через эхо.</li>
+        <li><b>Работает на телефоне</b> за полсекунды на трек, без интернета.</li>
+      </ol>
+    </div>
+    <div class="card"><div class="bars"><i></i><i style="animation-delay:.25s"></i><i style="animation-delay:.5s"></i><i style="animation-delay:.75s"></i><i></i><i style="animation-delay:.25s"></i><i style="animation-delay:.5s"></i><i style="animation-delay:.75s"></i><i></i><i style="animation-delay:.25s"></i><i style="animation-delay:.5s"></i><i style="animation-delay:.75s"></i></div></div>
+  </section>
+
+  <section class="os">
+    <h2>Открытый исходный код</h2>
+    <p class="sub" style="margin: 0 auto 30px">Весь код приложения на GitHub под лицензией MIT. Никакой телеметрии и чужих серверов: приложение общается только с Яндекс Музыкой.</p>
+    <div class="card">
+      <p><code>ios/</code> — приложение для iPhone на SwiftUI<br><code>android/</code> — версия для Android<br><code>docs/</code> — этот сайт</p>
+      <p class="small">Yokayo Music — неофициальный клиент. Не связан с Яндексом и Apple. Музыка воспроизводится по вашей подписке.</p>
+    </div>
+  </section>
+
+  <footer>Yokayo Music · сделано с любовью к музыке · <a href="https://github.com/ghostik707/yokayo-music">GitHub</a></footer>
+</div>
+<script>
+  // мерцающие звёзды на фоне
+  const c = document.getElementById('stars'), x = c.getContext('2d');
+  let s = [];
+  function size() { c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio; s = Array.from({ length: 90 }, () => ({ x: Math.random() * c.width, y: Math.random() * c.height, r: Math.random() * 1.6 + .3, p: Math.random() * 6 })); }
+  size(); addEventListener('resize', size);
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  (function draw(t) {
+    x.clearRect(0, 0, c.width, c.height);
+    for (const p of s) { x.globalAlpha = .35 + .35 * Math.sin(t / 900 + p.p); x.fillStyle = '#bfe6ff'; x.beginPath(); x.arc(p.x, p.y, p.r * devicePixelRatio, 0, 7); x.fill(); }
+    if (!still) requestAnimationFrame(draw);
+  })(0);
+</script>
+</body>
+</html>
