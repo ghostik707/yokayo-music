@@ -10,7 +10,8 @@
         android:label="Yokayo"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Yokayo"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:largeHeap="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -52,7 +52,7 @@ private val Gray = Color(0xFF8E8E93)
 
 /** Настройки: профиль, быстрые плитки и стеклянные карточки по темам. */
 @Composable
-fun SettingsScreen(state: AppState, close: () -> Unit) {
+fun SettingsScreen(state: AppState, openLab: () -> Unit, close: () -> Unit) {
     var page by remember { mutableStateOf("main") }
     var confirmLogout by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -65,7 +65,7 @@ fun SettingsScreen(state: AppState, close: () -> Unit) {
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                 if (page != "main") Box(Modifier.align(Alignment.CenterStart)) { CircleButton(Icons.Default.ChevronLeft) { page = "main" } }
-                Text(when (page) { "eq" -> "Эквалайзер"; "stats" -> "Статистика"; else -> "Настройки" }, color = Color.White, fontWeight = FontWeight.SemiBold,
+                Text(when (page) { "eq" -> "Эквалайзер"; "stats" -> "Статистика"; "dj" -> "DJ-режим"; else -> "Настройки" }, color = Color.White, fontWeight = FontWeight.SemiBold,
                     fontSize = 17.sp, modifier = Modifier.align(Alignment.Center))
                 Text("Готово", color = Neon, fontWeight = FontWeight.SemiBold, fontSize = 17.sp,
                     modifier = Modifier.align(Alignment.CenterEnd).clip(CircleShape).background(Color.White.copy(alpha = 0.1f)).clickable(onClick = close)
@@ -74,15 +74,25 @@ fun SettingsScreen(state: AppState, close: () -> Unit) {
             when (page) {
                 "eq" -> EqualizerScreen()
                 "stats" -> StatsBody(state)
+                "dj" -> DjSettingsPage(openLab)
                 else -> Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     ProfileCard(state) { confirmLogout = true }
                     StatsStrip(state) { page = "stats" }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        QuickTile(Icons.Default.Album, "DJ-режим", if (Prefs.djEnabled) "ИИ-диджей" else "Выкл.", listOf(Color(0xFF5856D6), NeonDeep), Prefs.djEnabled, Modifier.weight(1f)) { page = "dj" }
+                        QuickTile(Icons.Default.Science, "DJ-лаборатория", "Тест перехода", listOf(Pink, Purple), false, Modifier.weight(1f), openLab)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         QuickTile(Icons.Default.Tune, "Эквалайзер", Prefs.eqPreset.title, listOf(Mint, Teal), Prefs.eqPreset != EqPreset.FLAT, Modifier.weight(1f)) { page = "eq" }
                         QuickTile(Icons.Default.BarChart, "Статистика", "Твоя музыка", listOf(Orange, Pink), false, Modifier.weight(1f)) { page = "stats" }
                     }
                     SCard("Звук", Icons.Default.GraphicEq, Mint) {
                         SNavRow(Icons.Default.Tune, Mint, "Эквалайзер", Prefs.eqPreset.title) { page = "eq" }
+                        SRow(Icons.Default.SwapHoriz, Color(0xFF5856D6), "Кроссфейд", if (Prefs.djEnabled) "В DJ-режиме треки сводит ИИ" else "Плавная смена треков без DJ-режима",
+                            trailing = { Text(if (Prefs.crossfade < 1) "Выкл." else "${Prefs.crossfade} с", color = Secondary, fontSize = 17.sp) },
+                            below = { Slider(Prefs.crossfade.toFloat(), { Prefs.crossfade = it.toInt() }, valueRange = 0f..12f, steps = 11, enabled = !Prefs.djEnabled,
+                                onValueChangeFinished = { Prefs.save() }, colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Neon, inactiveTrackColor = Fill)) })
+                        SNavRow(Icons.Default.Album, Color(0xFF5856D6), "DJ-режим", if (Prefs.djEnabled) "ИИ-диджей" else "Выкл.") { page = "dj" }
                     }
                     SCard("Качество", Icons.Default.Wifi, Blue) {
                         SRow(Icons.Default.Wifi, Blue, "Wi-Fi", below = { Segmented(listOf(128, 192, 320), Prefs.qualityWifi) { Prefs.qualityWifi = it; Prefs.save() } })
@@ -294,9 +304,9 @@ fun EqualizerScreen() {
             gains.forEachIndexed { i, g ->
                 BandSlider(g, Modifier.weight(1f).fillMaxHeight(), onStart = {
                     if (Prefs.eqPreset != EqPreset.CUSTOM) { Prefs.eqCustom = gains; Prefs.eqPreset = EqPreset.CUSTOM }
-                }, onEnd = { Prefs.eqCustom = gains; Prefs.save() }) { v ->
+                }, onEnd = { Prefs.eqCustom = gains; Prefs.previewGains = null; Prefs.save() }) { v ->
                     gains = gains.toMutableList().also { it[i] = v }
-                    Engine.applyEq(gains)
+                    Prefs.previewGains = gains
                 }
             }
         }

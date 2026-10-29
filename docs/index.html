@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Yokayo Music</title>
-<meta name="description" content="Открытый клиент Яндекс Музыки в стиле Apple Music с ИИ-диджеем, который сводит треки прямо на телефоне.">
+<meta name="description" content="Открытый клиент Яндекс Музыки в стиле Apple Music с ИИ-диджеем, который сводит треки прямо на телефоне. Для iPhone и Android.">
 <link rel="icon" href="img/star.png">
 <style>
   :root {
@@ -29,6 +29,7 @@
   .btns { display: flex; flex-wrap: wrap; gap: 12px; }
   .btn { display: inline-flex; align-items: center; gap: 8px; padding: 14px 22px; border-radius: 999px; font-weight: 700; }
   .btn.primary { background: linear-gradient(90deg, var(--neon), var(--deep)); color: #020414; box-shadow: 0 10px 40px rgba(58,91,255,.45); }
+  .btn.android { background: linear-gradient(90deg, #3ddc84, #1fa463); color: #02140a; box-shadow: 0 10px 40px rgba(61,220,132,.35); }
   .btn.ghost { border: 1px solid var(--line); color: var(--text); background: var(--card); }
   .small { color: var(--muted); font-size: 14px; margin-top: 14px; }
   .hero-star { position: relative; display: grid; place-items: center; aspect-ratio: 1; }
@@ -82,9 +83,10 @@
       <p class="lead">Открытый клиент Яндекс Музыки в стиле Apple Music. ИИ-диджей своей нейросетью слышит биты и сводит треки в непрерывный сет — прямо на телефоне, без серверов.</p>
       <div class="btns">
         <a class="btn primary" href="https://github.com/ghostik707/yokayo-music/releases/latest">Скачать для iPhone</a>
+        <a class="btn android" href="https://github.com/ghostik707/yokayo-music/releases/latest">🤖 Скачать для Android</a>
         <a class="btn ghost" href="https://github.com/ghostik707/yokayo-music">Исходный код</a>
       </div>
-      <p class="small">IPA для установки через eSign / AltStore · iOS 18+ · нужна подписка Яндекс Плюс</p>
+      <p class="small">iPhone — IPA через eSign / AltStore, iOS 18+ · Android — APK, Android 8+ · нужна подписка Яндекс Плюс</p>
     </div>
     <div class="hero-star"><div class="ring"></div><div class="ring"></div><div class="ring"></div><img src="img/star.png" alt="Звезда Yokayo"></div>
   </header>
@@ -111,6 +113,16 @@
     </div>
   </section>
 
+  <section>
+    <h2>Теперь и на Android</h2>
+    <p class="sub">Тот же неоновый дизайн, «Моя волна», чарт, поиск, тексты караоке, эквалайзер — и ИИ-диджей с той же нейросетью BeatNet: на Android она слышит биты так же, как на iPhone.</p>
+    <div class="shots">
+      <img src="img/android-home.jpg" alt="Главная на Android">
+      <img src="img/android-search.jpg" alt="Поиск на Android">
+      <img src="img/android-settings.jpg" alt="Настройки на Android">
+    </div>
+  </section>
+
   <section class="net">
     <div>
       <h2>BeatNet — своя нейросеть</h2>
@@ -119,7 +131,7 @@
         <li><b>Слышит ~12 секунд вокруг</b> каждого момента: 8 расширяющихся свёрток, 31 тыс. параметров.</li>
         <li><b>Находит доли и сильные доли</b>, из них — точный темп и сетку тактов.</li>
         <li><b>Честно говорит, когда не уверена</b> — и тогда диджей не сводит по битам, а меняет трек через эхо.</li>
-        <li><b>Работает на телефоне</b> за полсекунды на трек, без интернета.</li>
+        <li><b>Работает на телефоне</b> за полсекунды на трек, без интернета — на iPhone и на Android.</li>
       </ol>
     </div>
     <div class="card"><div class="bars"><i></i><i style="animation-delay:.25s"></i><i style="animation-delay:.5s"></i><i style="animation-delay:.75s"></i><i></i><i style="animation-delay:.25s"></i><i style="animation-delay:.5s"></i><i style="animation-delay:.75s"></i><i></i><i style="animation-delay:.25s"></i><i style="animation-delay:.5s"></i><i style="animation-delay:.75s"></i></div></div>
@@ -129,7 +141,7 @@
     <h2>Открытый исходный код</h2>
     <p class="sub" style="margin: 0 auto 30px">Весь код приложения на GitHub под лицензией MIT. Никакой телеметрии и чужих серверов: приложение общается только с Яндекс Музыкой.</p>
     <div class="card">
-      <p><code>ios/</code> — приложение для iPhone на SwiftUI<br><code>android/</code> — версия для Android<br><code>docs/</code> — этот сайт</p>
+      <p><code>ios/</code> — приложение для iPhone на SwiftUI<br><code>android/</code> — приложение для Android на Kotlin и Jetpack Compose<br><code>docs/</code> — этот сайт</p>
       <p class="small">Yokayo Music — неофициальный клиент. Не связан с Яндексом и Apple. Музыка воспроизводится по вашей подписке.</p>
     </div>
   </section>

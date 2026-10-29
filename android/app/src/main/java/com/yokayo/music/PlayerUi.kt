@@ -44,6 +44,8 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlin.math.roundToInt
+import com.yokayo.music.audio.PlayerCore
+import com.yokayo.music.audio.SpeedMode
 
 private fun fmt(ms: Long): String { val s = (ms / 1000).coerceAtLeast(0); return "%d:%02d".format(s / 60, s % 60) }
 
@@ -58,7 +60,7 @@ fun MiniPlayer(state: AppState, open: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(t.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(t.artist, color = Secondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(PlayerCore.djStatus ?: t.artist, color = if (PlayerCore.djStatus != null) Neon else Secondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box(Modifier.size(40.dp).clickable(onClick = state::toggle), contentAlignment = Alignment.Center) {
             if (state.isLoading) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
@@ -90,7 +92,7 @@ private fun coverColors(url: String?): List<Color> {
 
 /** Полноэкранный плеер в стиле Apple Music. */
 @Composable
-fun NowPlaying(state: AppState, close: () -> Unit) {
+fun NowPlaying(state: AppState, openLab: () -> Unit, close: () -> Unit) {
     val t = state.current ?: return
     var mode by remember { mutableIntStateOf(0) }   // 0 — обложка, 1 — текст, 2 — очередь
     var dragY by remember { mutableFloatStateOf(0f) }
@@ -111,7 +113,7 @@ fun NowPlaying(state: AppState, close: () -> Unit) {
                         CoverView(t.coverUrl(800), Modifier.size(w).scale(scale).shadow(if (state.isPlaying) 30.dp else 12.dp, RoundedCornerShape(12.dp)), corner = 12.dp)
                     }
                 }
-                Info(state, t, Modifier.padding(horizontal = 28.dp))
+                Info(state, t, openLab, Modifier.padding(horizontal = 28.dp))
             } else {
                 Row(Modifier.padding(horizontal = 28.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     CoverView(t.coverUrl(200), Modifier.size(64.dp).shadow(8.dp, RoundedCornerShape(8.dp)), corner = 8.dp)
@@ -128,10 +130,12 @@ fun NowPlaying(state: AppState, close: () -> Unit) {
             VolumeBar(Modifier.padding(horizontal = 28.dp).padding(top = 22.dp))
             Row(Modifier.fillMaxWidth().padding(horizontal = 36.dp).padding(top = 18.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                BottomIcon(Icons.Default.Shuffle, state.shuffle) { state.toggleShuffle() }
+                Box(Modifier.size(34.dp).clickable { Prefs.djEnabled = !Prefs.djEnabled; Prefs.save(); if (Prefs.djEnabled) PlayerCore.prepareNext() }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Album, null, tint = if (Prefs.djEnabled) Neon else Color.White.copy(alpha = 0.6f), modifier = Modifier.size(24.dp))
+                }
                 BottomIcon(Icons.Outlined.FormatQuote, mode == 1) { mode = if (mode == 1) 0 else 1 }
-                BottomIcon(if (state.repeat == androidx.media3.common.Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                    state.repeat != androidx.media3.common.Player.REPEAT_MODE_OFF) { state.cycleRepeat() }
+                BottomIcon(if (state.repeat == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                    state.repeat != 0) { state.cycleRepeat() }
                 BottomIcon(Icons.Default.FormatListBulleted, mode == 2) { mode = if (mode == 2) 0 else 2 }
             }
         }
@@ -147,7 +151,7 @@ private fun BottomIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, ac
 }
 
 @Composable
-private fun Info(state: AppState, t: Track, modifier: Modifier) {
+private fun Info(state: AppState, t: Track, openLab: () -> Unit, modifier: Modifier) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -155,6 +159,8 @@ private fun Info(state: AppState, t: Track, modifier: Modifier) {
                 if (t.explicit) ExplicitBadge()
             }
             Text(t.artist, color = Color.White.copy(alpha = 0.65f), fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            PlayerCore.djStatus?.let { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Album, null, tint = Neon, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text(it, color = Neon, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) } }
+            if (PlayerCore.speed != SpeedMode.NORMAL) Text(PlayerCore.speed.title, color = Neon, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
         val liked = state.isLiked(t)
         val bounce by animateFloatAsState(if (liked) 1f else 0.9f, spring(dampingRatio = 0.35f, stiffness = 500f), label = "like")
@@ -162,6 +168,7 @@ private fun Info(state: AppState, t: Track, modifier: Modifier) {
             contentAlignment = Alignment.Center) {
             Icon(if (liked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, null, tint = Color.White, modifier = Modifier.size(20.dp))
         }
+        PlayerMenu(openLab)
         SongMenuButton(state, t, circle = true)
     }
 }
@@ -278,6 +285,26 @@ private fun Queue(state: AppState) {
                 }
                 if (i == state.queueIndex) NowPlayingBars(state.isPlaying, Color.White)
             }
+        }
+    }
+}
+
+/** Меню плеера: скорость (Sped up / Slowed) и DJ-лаборатория. */
+@Composable
+private fun PlayerMenu(openLab: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Box(Modifier.size(34.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.14f)).clickable { open = true }, contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Speed, null, tint = Color.White, modifier = Modifier.size(20.dp))
+        }
+        DropdownMenu(open, { open = false }, containerColor = Color(0xFF1E2033)) {
+            SpeedMode.entries.forEach { m ->
+                DropdownMenuItem(text = { Text(m.title, color = Color.White) }, onClick = { PlayerCore.changeSpeed(m); open = false },
+                    trailingIcon = { if (PlayerCore.speed == m) Icon(Icons.Default.Check, null, tint = Neon) })
+            }
+            HorizontalDivider(color = Separator)
+            DropdownMenuItem(text = { Text("DJ-лаборатория", color = Color.White) }, onClick = { open = false; openLab() },
+                trailingIcon = { Icon(Icons.Default.Science, null, tint = Color.White) })
         }
     }
 }

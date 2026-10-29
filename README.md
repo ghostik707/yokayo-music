@@ -8,10 +8,11 @@
 
 [![Release](https://img.shields.io/github/v/release/ghostik707/yokayo-music?style=for-the-badge&color=4cc3ff&label=версия)](https://github.com/ghostik707/yokayo-music/releases/latest)
 [![iOS](https://img.shields.io/badge/iOS-18%2B-3a5bff?style=for-the-badge&logo=apple&logoColor=white)](#-установка)
+[![Android](https://img.shields.io/badge/Android-8%2B-3ddc84?style=for-the-badge&logo=android&logoColor=white)](android)
 [![Swift](https://img.shields.io/badge/SwiftUI-orange?style=for-the-badge&logo=swift&logoColor=white)](ios)
 [![License](https://img.shields.io/badge/лицензия-MIT-a46bff?style=for-the-badge)](LICENSE)
 
-[**⬇️ Скачать IPA**](https://github.com/ghostik707/yokayo-music/releases/latest) · [**🌐 Сайт**](https://ghostik707.github.io/yokayo-music/) · [**🧠 BeatNet**](#-beatnet--своя-нейросеть)
+[**⬇️ IPA для iPhone**](https://github.com/ghostik707/yokayo-music/releases/latest) · [**🤖 APK для Android**](https://github.com/ghostik707/yokayo-music/releases/latest) · [**🌐 Сайт**](https://ghostik707.github.io/yokayo-music/) · [**🧠 BeatNet**](#-beatnet--своя-нейросеть)
 
 </div>
 
@@ -72,6 +73,18 @@
 </tr>
 </table>
 
+## 🤖 Android
+
+Та же Yokayo на Kotlin и Jetpack Compose: дизайн один в один с iPhone, «Моя волна», чарт, поиск, тексты, эквалайзер и **ИИ-диджей** со своим звуковым движком (две деки, фильтры, эхо, реверб, подстройка темпа). BeatNet на Android даёт те же результаты, что на iPhone.
+
+<p align="center">
+  <img src="docs/img/android-home.jpg" width="230" alt="Android: главная">
+  &nbsp;
+  <img src="docs/img/android-search.jpg" width="230" alt="Android: поиск">
+  &nbsp;
+  <img src="docs/img/android-settings.jpg" width="230" alt="Android: настройки">
+</p>
+
 ## 🧠 BeatNet — своя нейросеть
 
 Чтобы сводить по битам, нужно точно знать, где они. BeatNet — маленькая свёрточная сеть, обученная с нуля специально для Yokayo.
@@ -92,9 +105,11 @@
 
 ## 📦 Установка
 
-1. Скачайте `YokayoMusic-x.y.ipa` из [последнего релиза](https://github.com/ghostik707/yokayo-music/releases/latest).
-2. Установите через **eSign**, **AltStore** или **Sideloadly**.
-3. Войдите в аккаунт Яндекса. Для полных треков нужна подписка Яндекс Плюс.
+**iPhone:** скачайте `YokayoMusic-x.y.ipa` из [последнего релиза](https://github.com/ghostik707/yokayo-music/releases/latest) и установите через **eSign**, **AltStore** или **Sideloadly**.
+
+**Android:** скачайте `YokayoMusic-x.y.apk` из [релизов](https://github.com/ghostik707/yokayo-music/releases), откройте файл и разрешите установку. Android 8+.
+
+Затем войдите в аккаунт Яндекса. Для полных треков нужна подписка Яндекс Плюс.
 
 ## 🛠️ Сборка
 
@@ -103,7 +118,9 @@ git clone https://github.com/ghostik707/yokayo-music.git
 open yokayo-music/ios/YokayoMusic.xcodeproj
 ```
 
-Нужен Xcode 26+. Зависимость [YM-API](https://github.com/p0rterB/YM-API) подтянется через Swift Package Manager. Соберите схему `YokayoMusic`.
+Android: `cd android && ./gradlew assembleRelease` (JDK 17, Android SDK 35).
+
+iPhone: нужен Xcode 26+. Зависимость [YM-API](https://github.com/p0rterB/YM-API) подтянется через Swift Package Manager. Соберите схему `YokayoMusic`.
 
 ## 🗂️ Структура
 

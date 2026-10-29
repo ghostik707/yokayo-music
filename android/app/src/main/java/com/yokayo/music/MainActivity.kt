@@ -43,6 +43,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 
+/** Шрифт Inter — близок к SF Pro на iPhone и не подменяется прошивкой Xiaomi. */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+val Inter = androidx.compose.ui.text.font.FontFamily(listOf(400, 500, 600, 700, 800, 900).map { w ->
+    androidx.compose.ui.text.font.Font(R.font.inter, FontWeight(w), variationSettings = androidx.compose.ui.text.font.FontVariation.Settings(
+        androidx.compose.ui.text.font.FontVariation.weight(w)))
+})
+
 class MainActivity : ComponentActivity() {
     private val state: AppState by viewModels()
 
@@ -53,8 +60,10 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Neon, background = Color.Black, surface = Color.Black)) {
-                Surface(Modifier.fillMaxSize(), color = Color.Black) {
-                    if (state.loggedIn) Root(state) else Onboarding(state)
+                ProvideTextStyle(TextStyle(fontFamily = Inter)) {
+                    Surface(Modifier.fillMaxSize(), color = Color.Black) {
+                        if (state.loggedIn) Root(state) else Onboarding(state)
+                    }
                 }
             }
         }
@@ -167,6 +176,7 @@ fun LoginSheet(state: AppState, close: () -> Unit) {
 fun Root(state: AppState) {
     var player by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
+    var lab by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { state.tick(); delay(250) } }
     BackHandler(!player && !settings && state.stacks[state.tab].size > 1) { state.pop() }
 
@@ -199,6 +209,9 @@ fun Root(state: AppState) {
             }
         }
 
+        // затемнение под панелями, чтобы контент не просвечивал
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(if (state.current != null) 190.dp else 130.dp)
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f), Color.Black))))
         // мини-плеер и панель вкладок, как в iOS 26
         Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 14.dp).padding(bottom = 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -215,11 +228,15 @@ fun Root(state: AppState) {
 
         AnimatedVisibility(player && state.current != null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
             BackHandler { player = false }
-            NowPlaying(state) { player = false }
+            NowPlaying(state, { lab = true }) { player = false }
         }
         AnimatedVisibility(settings, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
             BackHandler { settings = false }
-            SettingsScreen(state) { settings = false }
+            SettingsScreen(state, { lab = true }) { settings = false }
+        }
+        AnimatedVisibility(lab, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
+            BackHandler { lab = false }
+            DjLabScreen(state) { lab = false }
         }
     }
 }

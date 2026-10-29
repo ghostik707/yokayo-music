@@ -3,23 +3,19 @@ package com.yokayo.music
 import android.app.Application
 import android.content.ComponentName
 import android.content.Context
-import android.net.Uri
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
-import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.time.LocalDate
+import com.yokayo.music.audio.PlayerCore
 
 /** Экраны внутри вкладок. */
 sealed interface Screen {
@@ -90,24 +86,27 @@ class ListeningStats(ctx: Context) {
     fun artist(id: String) = meta[id]?.second ?: "—"
 }
 
-/** Состояние приложения: вход, навигация, очередь, плеер, «Мне нравится». */
+/** Состояние приложения: вход, навигация, плеер (через PlayerCore), «Мне нравится». */
 class AppState(app: Application) : AndroidViewModel(app) {
+    private val core = PlayerCore
     var loggedIn by mutableStateOf(false); private set
     var account by mutableStateOf<Account?>(null); private set
-    var current by mutableStateOf<Track?>(null); private set
-    var isPlaying by mutableStateOf(false); private set
-    var isLoading by mutableStateOf(false); private set
-    var position by mutableLongStateOf(0); private set
-    var duration by mutableLongStateOf(0); private set
     var liked by mutableStateOf<Set<String>>(emptySet()); private set
-    var queue by mutableStateOf<List<Track>>(emptyList()); private set
-    var queueIndex by mutableStateOf(0); private set
-    var isWave by mutableStateOf(false); private set
     var waveLoading by mutableStateOf(false); private set
     var ownPlaylists by mutableStateOf<List<Playlist>>(emptyList()); private set
     var toast by mutableStateOf<String?>(null)
     var shuffle by mutableStateOf(false); private set
-    var repeat by mutableStateOf(Player.REPEAT_MODE_OFF); private set
+
+    val current get() = core.current
+    val isPlaying get() = core.isPlaying
+    val isLoading get() = core.isLoading
+    val position get() = (core.position * 1000).toLong()
+    val duration get() = (core.duration * 1000).toLong()
+    val queue get() = core.queue
+    val queueIndex get() = core.index
+    val isWave get() = core.isWave
+    /** 0 — выкл, 1 — всё, 2 — один. */
+    val repeat get() = core.repeat
 
     // навигация: свой стек на каждой вкладке
     var tab by mutableStateOf(0)
@@ -117,47 +116,36 @@ class AppState(app: Application) : AndroidViewModel(app) {
 
     val stats = ListeningStats(app)
     private var controller: MediaController? = null
-    private var extending = false
     private var lastTick = 0L
 
     init {
         Ym.init(app); Prefs.init(app)
+        Engine.appContext = app
+        core.init(app)
         loggedIn = Ym.token != null
-        connect()
+        core.onTrackStarted = { t -> if (core.isWave) viewModelScope.launch { Ym.waveFeedback(JSONObject().put("type", "trackStarted").put("trackId", t.id)) } }
+        core.onTrackEnded = { t, played, skipped ->
+            if (core.isWave) viewModelScope.launch {
+                Ym.waveFeedback(JSONObject().put("type", if (skipped) "skip" else "trackFinished").put("trackId", t.id).put("totalPlayedSeconds", played))
+            }
+        }
+        core.onNeedMore = { extendWave() }
+        core.onError = { toast = it }
+        // сервис нужен для шторки и экрана блокировки — подключаемся к нему
+        viewModelScope.launch {
+            runCatching { controller = MediaController.Builder(app, SessionToken(app, ComponentName(app, PlaybackService::class.java))).buildAsync().await() }
+        }
         if (loggedIn) refresh()
     }
 
-    private fun connect() {
-        val ctx = getApplication<Application>()
-        viewModelScope.launch {
-            val c = MediaController.Builder(ctx, SessionToken(ctx, ComponentName(ctx, PlaybackService::class.java))).buildAsync().await()
-            controller = c
-            c.addListener(object : Player.Listener {
-                override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
-                override fun onPlaybackStateChanged(state: Int) { isLoading = state == Player.STATE_BUFFERING }
-                override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                    queueIndex = c.currentMediaItemIndex
-                    current = queue.getOrNull(queueIndex)
-                    current?.let { t -> if (isWave) viewModelScope.launch { Ym.waveFeedback(JSONObject().put("type", "trackStarted").put("trackId", t.id)) } }
-                    extendWave()
-                }
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) { toast = "Не удалось воспроизвести трек" }
-            })
-            isPlaying = c.isPlaying
-        }
-    }
-
-    /** Вызывается из интерфейса 4 раза в секунду. */
+    /** Вызывается из интерфейса 4 раза в секунду: статистика прослушивания. */
     fun tick() {
-        val c = controller ?: return
-        position = c.currentPosition
-        duration = c.duration.coerceAtLeast(0)
         val now = System.currentTimeMillis()
         if (isPlaying && lastTick > 0) current?.let { stats.add(it, (now - lastTick) / 1000.0) }
         lastTick = now
     }
 
-    /** Только в отладочной сборке: показать интерфейс без входа (для скриншотов). */
+    /** Только в сборке для скриншотов: показать интерфейс без входа. */
     fun preview() { if (BuildConfig.PREVIEW) loggedIn = true }
 
     fun onLogin(token: String) {
@@ -168,9 +156,9 @@ class AppState(app: Application) : AndroidViewModel(app) {
     }
 
     fun logout() {
-        controller?.stop(); controller?.clearMediaItems()
+        core.pause()
         Ym.saveToken(null)
-        loggedIn = false; account = null; liked = emptySet(); current = null; queue = emptyList()
+        loggedIn = false; account = null; liked = emptySet()
     }
 
     fun refresh() = viewModelScope.launch {
@@ -179,34 +167,13 @@ class AppState(app: Application) : AndroidViewModel(app) {
         runCatching { ownPlaylists = Ym.userPlaylists() }
     }
 
-    private fun item(t: Track) = MediaItem.Builder()
-        .setMediaId(t.id)
-        .setUri(Uri.Builder().scheme("ym").authority("track").appendPath(t.id).build())
-        .setMediaMetadata(MediaMetadata.Builder()
-            .setTitle(t.title).setArtist(t.artist)
-            .setArtworkUri(t.coverUrl(600)?.let(Uri::parse))
-            .build())
-        .build()
-
     fun play(list: List<Track>, index: Int = 0, shuffled: Boolean = false, wave: Boolean = false) {
-        val c = controller ?: return
         if (list.isEmpty()) return
         val l = if (shuffled) list.shuffled() else list
-        val i = if (shuffled) 0 else index
-        isWave = wave
-        queue = l; queueIndex = i; current = l.getOrNull(i)
-        c.setMediaItems(l.map(::item), i, 0)
-        c.prepare(); c.play()
+        core.play(l, if (shuffled) 0 else index, wave)
     }
 
-    fun playNext(t: Track) {
-        val c = controller ?: return play(listOf(t))
-        if (queue.isEmpty()) return play(listOf(t))
-        val at = c.currentMediaItemIndex + 1
-        c.addMediaItem(at, item(t))
-        queue = queue.toMutableList().apply { add(at, t) }
-        toast = "Сыграет следующим"
-    }
+    fun playNext(t: Track) { core.playNext(t); toast = "Сыграет следующим" }
 
     fun playWave() = viewModelScope.launch {
         waveLoading = true
@@ -216,35 +183,23 @@ class AppState(app: Application) : AndroidViewModel(app) {
         waveLoading = false
     }
 
+    private var extending = false
     private fun extendWave() {
-        val c = controller ?: return
-        if (!isWave || extending || c.currentMediaItemIndex < c.mediaItemCount - 3) return
+        if (extending) return
         extending = true
         viewModelScope.launch {
-            runCatching { Ym.waveMore(queue.map { it.id }) }.onSuccess { more ->
-                c.addMediaItems(more.map(::item)); queue = queue + more
-            }
+            runCatching { Ym.waveMore(core.queue.map { it.id }) }.onSuccess { core.append(it) }
             extending = false
         }
     }
 
-    fun jump(i: Int) { controller?.seekTo(i, 0) }
-    fun toggle() { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
-    fun next() {
-        val c = controller ?: return
-        if (isWave) current?.let { t ->
-            viewModelScope.launch { Ym.waveFeedback(JSONObject().put("type", "skip").put("trackId", t.id).put("totalPlayedSeconds", c.currentPosition / 1000.0)) }
-        }
-        c.seekToNextMediaItem()
-    }
-    fun previous() { controller?.let { if (it.currentPosition > 3000) it.seekTo(0) else it.seekToPreviousMediaItem() } }
-    fun seek(ms: Long) { controller?.seekTo(ms) }
-    fun toggleShuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; shuffle = it.shuffleModeEnabled } }
-    fun cycleRepeat() {
-        val c = controller ?: return
-        c.repeatMode = when (c.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }
-        repeat = c.repeatMode
-    }
+    fun jump(i: Int) = core.jump(i)
+    fun toggle() = core.toggle()
+    fun next() = core.next()
+    fun previous() = core.previous()
+    fun seek(ms: Long) = core.seek(ms / 1000.0)
+    fun toggleShuffle() { shuffle = !shuffle; if (shuffle) core.shuffleRest() }
+    fun cycleRepeat() = core.cycleRepeat()
 
     fun toggleLike(t: Track) {
         val now = t.baseId !in liked

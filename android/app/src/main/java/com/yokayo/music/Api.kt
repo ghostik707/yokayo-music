@@ -123,7 +123,7 @@ object Ym {
             title = o.optString("title") + (o.optString("version").takeIf { it.isNotEmpty() }?.let { " ($it)" } ?: ""),
             artist = artists.joinToString(", ") { it.optString("name") },
             artistId = artists.firstOrNull()?.optLong("id"),
-            cover = o.optString("coverUri").ifEmpty { album?.optString("coverUri") },
+            cover = o.optString("coverUri").ifEmpty { album?.optString("coverUri") }?.ifEmpty { o.optString("ogImage") }?.ifEmpty { null },
             durationMs = o.optLong("durationMs"),
             explicit = o.optString("contentWarning") == "explicit",
             albumId = album?.optLong("id"),

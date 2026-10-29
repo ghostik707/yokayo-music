@@ -1,22 +1,22 @@
 package com.yokayo.music
 
 import android.content.Context
-import android.media.audiofx.Equalizer
 import android.net.ConnectivityManager
 import android.net.Uri
+import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.common.util.Util
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.datasource.ResolvingDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import com.yokayo.music.audio.PlayerCore
 
 /** Пресеты эквалайзера — те же, что на iPhone (10 полос, дБ). */
 enum class EqPreset(val title: String, val gains: List<Float>) {
@@ -38,7 +38,7 @@ enum class EqPreset(val title: String, val gains: List<Float>) {
     }
 }
 
-/** Настройки приложения (общие для экрана и сервиса — один процесс). */
+/** Настройки приложения (общие для экрана и движка — один процесс). */
 object Prefs {
     private lateinit var p: android.content.SharedPreferences
     var qualityWifi by mutableStateOf(320)
@@ -48,6 +48,13 @@ object Prefs {
     var eqPreset by mutableStateOf(EqPreset.FLAT)
     var eqCustom by mutableStateOf(List(10) { 0f })
     var onboarded by mutableStateOf(false)
+    var djEnabled by mutableStateOf(false)
+    var djFx by mutableStateOf(0.6f)
+    var djSmartOrder by mutableStateOf(false)
+    var djGlide by mutableStateOf(true)
+    var crossfade by mutableStateOf(0)
+    /** Пока тянешь ползунок эквалайзера — слышно сразу. */
+    @Volatile var previewGains: List<Float>? = null
 
     fun init(ctx: Context) {
         if (::p.isInitialized) return
@@ -57,53 +64,73 @@ object Prefs {
         eqPreset = runCatching { EqPreset.valueOf(p.getString("eq", "FLAT")!!) }.getOrDefault(EqPreset.FLAT)
         eqCustom = p.getString("eqCustom", null)?.split(",")?.mapNotNull { it.toFloatOrNull() }?.takeIf { it.size == 10 } ?: List(10) { 0f }
         onboarded = p.getBoolean("onboarded", false)
+        djEnabled = p.getBoolean("dj", false); djFx = p.getFloat("djFx", 0.6f); djSmartOrder = p.getBoolean("djSmart", false)
+        djGlide = p.getBoolean("djGlide", true); crossfade = p.getInt("crossfade", 0)
     }
 
     fun save() {
         p.edit().putInt("qWifi", qualityWifi).putInt("qCell", qualityCell).putBoolean("particles", particles)
             .putBoolean("explicit", explicit).putString("eq", eqPreset.name).putString("eqCustom", eqCustom.joinToString(","))
-            .putBoolean("onboarded", onboarded).apply()
-        Engine.applyEq()
+            .putBoolean("onboarded", onboarded).putBoolean("dj", djEnabled).putFloat("djFx", djFx).putBoolean("djSmart", djSmartOrder)
+            .putBoolean("djGlide", djGlide).putInt("crossfade", crossfade).apply()
     }
 
-    val gains get() = if (eqPreset == EqPreset.CUSTOM) eqCustom else eqPreset.gains
+    val gains get() = previewGains ?: if (eqPreset == EqPreset.CUSTOM) eqCustom else eqPreset.gains
 }
 
-/** Звуковой движок: эквалайзер на сессии плеера, выбор качества по сети. */
+/** Выбор качества по сети. */
 object Engine {
-    var sessionId = 0
-    private var eq: Equalizer? = null
     var appContext: Context? = null
-
     fun maxKbps(): Int {
         val cm = appContext?.getSystemService(ConnectivityManager::class.java)
         return if (cm?.isActiveNetworkMetered == true) Prefs.qualityCell else Prefs.qualityWifi
     }
-
-    fun attachEq(session: Int) {
-        sessionId = session
-        eq = runCatching { Equalizer(0, session) }.getOrNull()
-        applyEq()
-    }
-
-    /** Наши 10 полос раскладываются на полосы системного эквалайзера по ближайшей частоте. */
-    fun applyEq(gains: List<Float> = Prefs.gains) {
-        val e = eq ?: return
-        runCatching {
-            e.enabled = gains.any { it != 0f }
-            val (lo, hi) = e.bandLevelRange.let { it[0] to it[1] }
-            for (b in 0 until e.numberOfBands) {
-                val center = e.getCenterFreq(b.toShort()) / 1000
-                val i = EqPreset.bands.indices.minBy { kotlin.math.abs(kotlin.math.ln(EqPreset.bands[it].toDouble() / center.coerceAtLeast(1))) }
-                e.setBandLevel(b.toShort(), (gains[i] * 100).toInt().coerceIn(lo.toInt(), hi.toInt()).toShort())
-            }
-        }
-    }
-
-    fun release() { eq?.release(); eq = null }
 }
 
-/** Фоновое воспроизведение: плеер живёт в сервисе, шторка и экран блокировки управляют им. */
+/** Плеер для системы (шторка, экран блокировки, наушники) поверх нашего движка. */
+@UnstableApi
+class CorePlayer : SimpleBasePlayer(Looper.getMainLooper()) {
+    private val commands = Player.Commands.Builder().addAll(
+        COMMAND_PLAY_PAUSE, COMMAND_SEEK_TO_NEXT, COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, COMMAND_SEEK_TO_PREVIOUS,
+        COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM, COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, COMMAND_GET_CURRENT_MEDIA_ITEM,
+        COMMAND_GET_TIMELINE, COMMAND_GET_METADATA, COMMAND_STOP).build()
+
+    fun refresh() = invalidateState()
+
+    override fun getState(): State {
+        val c = PlayerCore
+        val items = c.queue.mapIndexed { i, t ->
+            MediaItemData.Builder("$i:${t.id}")
+                .setMediaItem(MediaItem.Builder().setMediaId(t.id).setMediaMetadata(MediaMetadata.Builder()
+                    .setTitle(t.title).setArtist(t.artist).setArtworkUri(t.coverUrl(600)?.let(Uri::parse)).build()).build())
+                .setDurationUs(if (i == c.index) (c.duration * 1e6).toLong() else t.durationMs * 1000)
+                .build()
+        }
+        val b = State.Builder().setAvailableCommands(commands).setPlaylist(items)
+            .setPlayWhenReady(c.isPlaying, PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+            .setPlaybackState(if (items.isEmpty()) STATE_IDLE else if (c.isLoading) STATE_BUFFERING else STATE_READY)
+        if (items.isNotEmpty()) b.setCurrentMediaItemIndex(c.index.coerceIn(0, items.size - 1)).setContentPositionMs { (PlayerCore.position * 1000).toLong() }
+        return b.build()
+    }
+
+    override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        if (playWhenReady) PlayerCore.resume() else PlayerCore.pause()
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleSeek(mediaItemIndex: Int, positionMs: Long, seekCommand: Int): ListenableFuture<*> {
+        when (seekCommand) {
+            COMMAND_SEEK_TO_NEXT, COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> PlayerCore.next()
+            COMMAND_SEEK_TO_PREVIOUS, COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> PlayerCore.previous()
+            else -> if (mediaItemIndex == PlayerCore.index) PlayerCore.seek(positionMs / 1000.0) else PlayerCore.jump(mediaItemIndex)
+        }
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleStop(): ListenableFuture<*> { PlayerCore.pause(); return Futures.immediateVoidFuture() }
+}
+
+/** Фоновое воспроизведение: сервис держит сессию, звук играет движок PlayerCore. */
 @UnstableApi
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
@@ -112,26 +139,15 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         Ym.init(this); Prefs.init(this)
         Engine.appContext = applicationContext
-        // ym://track/<id> превращается в прямую ссылку на mp3 только перед загрузкой
-        val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
-        val resolving = ResolvingDataSource.Factory(http) { spec ->
-            if (spec.uri.scheme == "ym") spec.withUri(Uri.parse(Ym.streamUrlBlocking(spec.uri.lastPathSegment ?: "", Engine.maxKbps()))) else spec
-        }
-        val audioSession = Util.generateAudioSessionIdV21(this)
-        val player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(resolving))
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
-            .setHandleAudioBecomingNoisy(true)
-            .build()
-        player.audioSessionId = audioSession
-        Engine.attachEq(audioSession)
+        PlayerCore.init(this)
+        val player = CorePlayer()
+        PlayerCore.onChange = { player.refresh() }
         session = MediaSession.Builder(this, player).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 
     override fun onDestroy() {
-        Engine.release()
         session?.run { player.release(); release() }
         session = null
         super.onDestroy()
