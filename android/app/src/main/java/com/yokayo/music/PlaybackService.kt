@@ -53,6 +53,8 @@ object Prefs {
     var djSmartOrder by mutableStateOf(false)
     var djGlide by mutableStateOf(true)
     var crossfade by mutableStateOf(0)
+    /** ai — композитор из приёмов, tn — переход рисует TransitionNet. */
+    var djMode by mutableStateOf("ai")
     /** Пока тянешь ползунок эквалайзера — слышно сразу. */
     @Volatile var previewGains: List<Float>? = null
 
@@ -65,14 +67,14 @@ object Prefs {
         eqCustom = p.getString("eqCustom", null)?.split(",")?.mapNotNull { it.toFloatOrNull() }?.takeIf { it.size == 10 } ?: List(10) { 0f }
         onboarded = p.getBoolean("onboarded", false)
         djEnabled = p.getBoolean("dj", false); djFx = p.getFloat("djFx", 0.6f); djSmartOrder = p.getBoolean("djSmart", false)
-        djGlide = p.getBoolean("djGlide", true); crossfade = p.getInt("crossfade", 0)
+        djGlide = p.getBoolean("djGlide", true); crossfade = p.getInt("crossfade", 0); djMode = p.getString("djMode", "ai")!!
     }
 
     fun save() {
         p.edit().putInt("qWifi", qualityWifi).putInt("qCell", qualityCell).putBoolean("particles", particles)
             .putBoolean("explicit", explicit).putString("eq", eqPreset.name).putString("eqCustom", eqCustom.joinToString(","))
             .putBoolean("onboarded", onboarded).putBoolean("dj", djEnabled).putFloat("djFx", djFx).putBoolean("djSmart", djSmartOrder)
-            .putBoolean("djGlide", djGlide).putInt("crossfade", crossfade).apply()
+            .putBoolean("djGlide", djGlide).putInt("crossfade", crossfade).putString("djMode", djMode).apply()
     }
 
     val gains get() = previewGains ?: if (eqPreset == EqPreset.CUSTOM) eqCustom else eqPreset.gains

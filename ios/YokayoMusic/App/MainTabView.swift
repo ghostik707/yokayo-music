@@ -18,7 +18,17 @@ struct MainTabView: View {
             NowPlayingView()
                 .navigationTransition(.zoom(sourceID: "player", in: ns))
         }
+        #if DEBUG
+        // для скриншотов: xcrun simctl launch … -debugScreen djlab|djsettings
+        .sheet(item: $debugScreen) { s in
+            NavigationStack { if s == "djlab" { DJLabView() } else { DJSettingsView() } }
+        }
+        .onAppear { debugScreen = UserDefaults.standard.string(forKey: "debugScreen") }
+        #endif
     }
+    #if DEBUG
+    @State private var debugScreen: String?
+    #endif
 }
 
 private extension View {
@@ -104,3 +114,7 @@ struct MiniPlayer: View {
         .onTapGesture { if player.current != nil { show = true } }
     }
 }
+
+#if DEBUG
+extension String: @retroactive Identifiable { public var id: String { self } }
+#endif

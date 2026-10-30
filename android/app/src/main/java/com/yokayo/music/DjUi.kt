@@ -55,6 +55,20 @@ fun DjSettingsPage(openLab: () -> Unit) {
                 NeonSwitch(Prefs.djEnabled) { Prefs.djEnabled = it; Prefs.save(); if (it) PlayerCore.prepareNext() }
             }
         }
+        Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("КТО ДЕЛАЕТ ПЕРЕХОД", color = Neon, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(Color(0x3D767680)).padding(2.dp)) {
+                listOf("ai" to "Композитор", "tn" to "TransitionNet").forEach { (k, t) ->
+                    Box(Modifier.weight(1f).clip(RoundedCornerShape(7.dp)).background(if (Prefs.djMode == k) Color(0xFF636366) else Color.Transparent)
+                        .clickable { Prefs.djMode = k; Prefs.save() }.padding(vertical = 7.dp), contentAlignment = Alignment.Center) {
+                        Text(t, color = Color.White, fontSize = 14.sp, fontWeight = if (Prefs.djMode == k) FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                }
+            }
+            Text(if (Prefs.djMode == "tn") "Биты слышит BeatNet, а сам переход рисует вторая нейросеть — TransitionNet: на каждую долю решает, как двигать громкость, бас, середину, фильтры, эхо и реверб обеих дек. Случайное «настроение» на входе — каждый раз новый переход."
+                else "Биты слышит BeatNet, а переход собирает ИИ-композитор из приёмов диджеев: перебирает сотни вариантов и выбирает лучший.",
+                color = Secondary, fontSize = 13.sp)
+        }
         Row(Modifier.fillMaxWidth().glass().press(openLab).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(listOf(Color(0xFFFF375F), Color(0xFFBF5AF2)))), contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Science, null, tint = Color.White)

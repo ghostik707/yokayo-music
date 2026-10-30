@@ -65,7 +65,7 @@ object PlayerCore {
     fun init(c: Context) {
         if (::ctx.isInitialized) return
         ctx = c.applicationContext
-        Decoder.init(ctx); Analyzer.init(ctx); MixBrain.init(ctx)
+        Decoder.init(ctx); Analyzer.init(ctx); MixBrain.init(ctx); TransitionNet.load(ctx); TnHistory.init(ctx)
         engine.onSwap = { tr -> main.post { swapped(tr) } }
         engine.onComplete = { tr -> main.post { completed(tr) } }
         engine.start()
@@ -281,13 +281,18 @@ object PlayerCore {
     fun plannedMix(a: TrackAnalysis, b: TrackAnalysis, next: Track): MixPlan {
         val key = "${current?.id}>${next.id}"
         plan?.let { if (it.first == key) return it.second }
-        val m = MixComposer.compose(a, b, activeDeck.realRate, current?.title ?: "", next.title, position)
+        val m = composeMix(a, b, activeDeck.realRate, current?.title ?: "", next.title, position)
         plan = key to m
         return m
     }
 
     val djReady get() = activeDeck.analysis != null && prepared?.analysis != null
     val plannedNext: MixPlan? get() { val a = activeDeck.analysis ?: return null; val p = prepared ?: return null; val b = p.analysis ?: return null; return plannedMix(a, b, p.track) }
+
+    /** Режим DJ: TransitionNet рисует переход сама, иначе — композитор из приёмов. */
+    private fun composeMix(a: TrackAnalysis, b: TrackAnalysis, rateA: Double, titleA: String, titleB: String, now: Double, start: Double? = null): MixPlan =
+        (if (com.yokayo.music.Prefs.djMode == "tn") NeuralComposer.compose(a, b, rateA, titleA, titleB, now, start) else null)
+            ?: MixComposer.compose(a, b, rateA, titleA, titleB, now, start)
 
     // MARK: Переход
 
@@ -301,7 +306,7 @@ object PlayerCore {
         val rateA = from.realRate
         var mix = plannedMix(aA, aB, p.track)
         if (urgent || mix.aStart > posA + 1.5) {
-            mix = MixComposer.compose(aA, aB, rateA, current?.title ?: "", p.track.title, posA, aA.downbeatAtOrAfter(posA + 0.35))
+            mix = composeMix(aA, aB, rateA, current?.title ?: "", p.track.title, posA, aA.downbeatAtOrAfter(posA + 0.35))
         }
         synchronized(engine.lock) {
             to.load(p.pcm, p.track, aB)
@@ -416,7 +421,7 @@ object PlayerCore {
                 isLoading = false; djStatus = null
                 if (pa == null || pb == null || anA == null || anB == null) { demoActive = false; done("Не удалось подготовить треки"); changed(); return@post }
                 prepared = Prepared(b, pb, anB); plan = null
-                val mix = MixComposer.compose(anA, anB, 1.0, a.title, b.title, 0.0)
+                val mix = composeMix(anA, anB, 1.0, a.title, b.title, 0.0)
                 synchronized(engine.lock) {
                     engine.decks.forEach { it.playing = false }
                     activeDeck.load(pa, a, anA); applySpeed(activeDeck)

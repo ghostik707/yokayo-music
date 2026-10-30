@@ -76,7 +76,12 @@ enum DJPlanner {
             return echoPlan(a: a, b: b, now: now, tA: tA, tB: tB, reason: tempoText, hot: false, variantTitle: "Классика")
         }
 
-        // ИИ: каждый переход сочиняется заново
+        // TransitionNet: переход рисует нейросеть
+        if AppSettings.shared.djMode == "tn",
+           let m = MixComposer.composeNeural(a: a, b: b, rateA: rateA, ratio: ratio, titleA: titleA, titleB: titleB, now: now, start: start) {
+            return m
+        }
+        // ИИ-композитор: каждый переход сочиняется заново из приёмов
         return MixComposer.compose(a: a, b: b, rateA: rateA, ratio: ratio, titleA: titleA, titleB: titleB, now: now, start: start)
     }
 

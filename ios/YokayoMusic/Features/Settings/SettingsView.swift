@@ -325,8 +325,15 @@ struct DJSettingsView: View {
             }
 
             Section {
+                NeuralThinkingCard()
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listRowBackground(Color.clear)
+            }
+
+            Section {
                 Picker("Режим", selection: $settings.djMode) {
-                    Text("ИИ-диджей").tag("ai")
+                    Text("Композитор").tag("ai")
+                    Text("TransitionNet").tag("tn")
                     Text("Классика").tag("classic")
                 }
                 .pickerStyle(.segmented)
@@ -334,6 +341,14 @@ struct DJSettingsView: View {
                 if settings.djMode == "classic" {
                     Text("Сведение по битам с обменом басами, фильтром и эхом — как в первой версии.")
                         .font(.footnote).foregroundStyle(.secondary)
+                } else if settings.djMode == "tn" {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Биты слышит BeatNet, а сам переход рисует вторая нейросеть — TransitionNet", systemImage: "brain.head.profile")
+                        Label("На каждую долю она решает, как двигать громкость, бас, середину, фильтры, эхо и реверб обеих дек — без готовых приёмов", systemImage: "waveform.path")
+                        Label("Училась на шаблонах диджеев, потом — сама, по «судье»: басы не спорят, громкость ровная, голоса не мешают, смены на сильную долю", systemImage: "graduationcap.fill")
+                        Label("Случайное «настроение» на входе: на одну и ту же пару каждый раз новый переход; похожие на недавние отбрасываются", systemImage: "dice.fill")
+                    }
+                    .font(.footnote).foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("Доли и сильные доли слышит своя нейросеть BeatNet — обучена с нуля и работает прямо на телефоне, без интернета", systemImage: "brain.head.profile")

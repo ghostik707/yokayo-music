@@ -31,6 +31,7 @@ data class TrackAnalysis(
     val introEndBar: Int,
     val outroStartBar: Int,
     val outroFound: Boolean,
+    val beatBands: FloatArray = FloatArray(0),   // по долям: бас, середина, верх — вход TransitionNet
 ) {
     val beat get() = 60 / bpm
     val bar get() = beat * 4
@@ -62,7 +63,8 @@ data class TrackAnalysis(
     fun json(): String = JSONObject().put("bpm", bpm).put("firstBeat", firstBeat).put("duration", duration).put("mixIn", mixIn)
         .put("lastSound", lastSound).put("confidence", confidence).put("key", key ?: -1)
         .put("barEnergy", JSONArray(barEnergy.map { it.toDouble() })).put("barLow", JSONArray(barLow.map { it.toDouble() }))
-        .put("introEndBar", introEndBar).put("outroStartBar", outroStartBar).put("outroFound", outroFound).toString()
+        .put("introEndBar", introEndBar).put("outroStartBar", outroStartBar).put("outroFound", outroFound)
+        .put("beatBands", JSONArray(beatBands.map { it.toDouble() })).toString()
 
     companion object {
         fun keyDistance(a: TrackAnalysis, b: TrackAnalysis): Int? {
@@ -76,7 +78,7 @@ data class TrackAnalysis(
             fun arr(k: String) = o.getJSONArray(k).let { a -> FloatArray(a.length()) { a.getDouble(it).toFloat() } }
             TrackAnalysis(o.getDouble("bpm"), o.getDouble("firstBeat"), o.getDouble("duration"), o.getDouble("mixIn"), o.getDouble("lastSound"),
                 o.getDouble("confidence"), o.getInt("key").takeIf { it >= 0 }, arr("barEnergy"), arr("barLow"),
-                o.getInt("introEndBar"), o.getInt("outroStartBar"), o.getBoolean("outroFound"))
+                o.getInt("introEndBar"), o.getInt("outroStartBar"), o.getBoolean("outroFound"), if (o.has("beatBands")) arr("beatBands") else FloatArray(0))
         }
     }
 }
@@ -257,7 +259,7 @@ object Analyzer {
     private lateinit var dir: File
     private val mem = java.util.concurrent.ConcurrentHashMap<String, TrackAnalysis>()
 
-    fun init(ctx: Context) { dir = File(ctx.filesDir, "analysis1").apply { mkdirs() }; BeatNet.load(ctx) }
+    fun init(ctx: Context) { dir = File(ctx.filesDir, "analysis2").apply { mkdirs() }; BeatNet.load(ctx) }
 
     private fun file(id: String) = File(dir, id.replace(":", "_") + ".json")
 
@@ -283,13 +285,14 @@ object Analyzer {
         val n = 1024; val half = n / 2
         val fft = Fft(n); val win = Fft.hann(n); val mag = FloatArray(half)
         val frames = max(0, (mono.size - n) / 128)
-        val rms = FloatArray(frames); val lowRMS = FloatArray(frames)
-        val lowBins = (150 / (SR / n)).toInt()
+        val rms = FloatArray(frames); val lowRMS = FloatArray(frames); val midRMS = FloatArray(frames); val highRMS = FloatArray(frames)
+        val lowBins = (150 / (SR / n)).toInt(); val midBins = (2000 / (SR / n)).toInt()
         for (f in 0 until frames) {
             fft.magnitudes(mono, f * 128, win, mag)
-            var e = 0f; var le = 0f
-            for (k in 1 until half) { val m = mag[k] * 2; val p = m * m; e += p; if (k <= lowBins) le += p }
+            var e = 0f; var le = 0f; var me = 0f; var he = 0f
+            for (k in 1 until half) { val m = mag[k] * 2; val p = m * m; e += p; if (k <= lowBins) le += p else if (k <= midBins) me += p else he += p }
             rms[f] = sqrt(e / half); lowRMS[f] = sqrt(le / max(1, lowBins))
+            midRMS[f] = sqrt(me / max(1, midBins - lowBins)); highRMS[f] = sqrt(he / max(1, half - midBins))
         }
         val g = BeatNet.run(mono)?.let { BeatNet.grid(it) } ?: throw IllegalStateException("grid")
         val bpm = g.bpm; val firstBeat = g.firstBeat
@@ -343,7 +346,20 @@ object Analyzer {
         val outroFound = outroStart > 0
         if (outroStart == 0) outroStart = max(nBars * 2 / 3, ((lastBar - 8) / 4) * 4)
         val key = detectKey(chroma(mono))
-        val tmp = TrackAnalysis(bpm, firstBeat, duration, 0.0, lastSound, g.confidence, key, barEnergy, barLow, introEnd, outroStart, outroFound)
+        val beat = 60 / bpm
+        val nBeats = max(1, ((duration - firstBeat) / beat).toInt())
+        val bands = FloatArray(nBeats * 3)
+        listOf(lowRMS, midRMS, highRMS).forEachIndexed { c, x ->
+            var peak = 0.0001f
+            for (k in 0 until nBeats) {
+                val lo = ((firstBeat + k * beat) * fps).toInt(); val hi = min(x.size, ((firstBeat + (k + 1) * beat) * fps).toInt())
+                var v = 0f
+                if (hi > lo && lo >= 0) { for (i in lo until hi) v += x[i]; v /= (hi - lo) }
+                bands[k * 3 + c] = v; peak = max(peak, v)
+            }
+            for (k in 0 until nBeats) bands[k * 3 + c] /= peak
+        }
+        val tmp = TrackAnalysis(bpm, firstBeat, duration, 0.0, lastSound, g.confidence, key, barEnergy, barLow, introEnd, outroStart, outroFound, bands)
         val mixIn = tmp.downbeatAtOrAfter(max(0.0, firstSound - 0.05))
         return tmp.copy(mixIn = if (mixIn < duration * 0.25) mixIn else firstBeat)
     }

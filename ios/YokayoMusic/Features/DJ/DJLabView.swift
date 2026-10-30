@@ -62,11 +62,12 @@ struct DJLabView: View {
                 .opacity(trackA == nil || trackB == nil ? 0.5 : 1)
                 .padding(.horizontal, 20)
                 if started {
-                    Text("🎲 — ИИ сочинит другой переход для этой пары.")
+                    Text(settings.djMode == "tn" ? "🎲 — TransitionNet нарисует другой переход с новым «настроением»." : "🎲 — ИИ сочинит другой переход для этой пары.")
                         .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 20)
                 }
 
                 if started || player.djStatus != nil { LiveDecks().padding(.horizontal, 20) }
+                NeuralThinkingCard().padding(.horizontal, 20)
                 if started, let r = player.lastRecipe { RateMix(recipe: r).padding(.horizontal, 20) }
             }
             .padding(.vertical, 16)

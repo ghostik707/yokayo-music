@@ -18,6 +18,7 @@ struct TrackAnalysis: Codable {
     var introEndBar: Int = 0       // такт, где начинается основная часть (дроп)
     var outroStartBar: Int = 0     // такт, где начинается аутро
     var outroFound: Bool = false   // аутро настоящее (энергия падает), а не «последние 8 тактов»
+    var beatBands: [Float] = []     // по долям: бас, середина, верх (0…1) — вход TransitionNet
 
     var beat: Double { 60 / bpm }
     var bar: Double { beat * 4 }
@@ -90,7 +91,7 @@ struct TrackAnalysis: Codable {
 
 enum BeatAnalyzer {
     private static var dir: URL {
-        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Analysis3", isDirectory: true)
+        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Analysis4", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }
@@ -211,6 +212,20 @@ enum BeatAnalyzer {
         a.introEndBar = introEnd
         a.outroStartBar = outroStart
         a.outroFound = outroFound
+        // по долям: бас, середина, верх — каждая полоса нормирована по треку
+        let nBeats = max(1, Int((duration - firstBeat) / beat))
+        var bands = [Float](repeating: 0, count: nBeats * 3)
+        for (c, x) in [spec.lowRMS, spec.midRMS, spec.highRMS].enumerated() {
+            var peak: Float = 0.0001
+            for k in 0..<nBeats {
+                let lo = Int((firstBeat + Double(k) * beat) * fps), hi = min(x.count, Int((firstBeat + Double(k + 1) * beat) * fps))
+                var v: Float = 0
+                if hi > lo, lo >= 0 { for i in lo..<hi { v += x[i] }; v /= Float(hi - lo) }
+                bands[k * 3 + c] = v; peak = max(peak, v)
+            }
+            for k in 0..<nBeats { bands[k * 3 + c] /= peak }
+        }
+        a.beatBands = bands
         let mixIn = a.downbeat(atOrAfter: max(0, firstSound - 0.05))
         a.mixIn = mixIn < duration * 0.25 ? mixIn : a.firstBeat
         return a
@@ -319,7 +334,7 @@ enum BeatAnalyzer {
 
     // MARK: Спектр
 
-    private struct Spec { var flux: [Float]; var lowFlux: [Float]; var rms: [Float]; var lowRMS: [Float]; var chroma: [Float] }
+    private struct Spec { var flux: [Float]; var lowFlux: [Float]; var rms: [Float]; var lowRMS: [Float]; var chroma: [Float]; var midRMS: [Float] = []; var highRMS: [Float] = [] }
 
     private static func spectralFeatures(_ x: [Float]) -> Spec {
         let n = fftN, half = n / 2
@@ -329,7 +344,7 @@ enum BeatAnalyzer {
         var window = [Float](repeating: 0, count: n)
         vDSP_hann_window(&window, vDSP_Length(n), Int32(vDSP_HANN_NORM))
         let frames = max(0, (x.count - n) / hop)
-        var flux = [Float](repeating: 0, count: frames), lowFlux = flux, rms = flux, lowRMS = flux
+        var flux = [Float](repeating: 0, count: frames), lowFlux = flux, rms = flux, lowRMS = flux, midRMS = flux, highRMS = flux
         var chroma = [Float](repeating: 0, count: 12)
         var prev = [Float](repeating: 0, count: half)
         var frame = [Float](repeating: 0, count: n)
@@ -337,6 +352,7 @@ enum BeatAnalyzer {
         var mag = [Float](repeating: 0, count: half)
         let binHz = Float(sr) / Float(n)
         let lowBins = Int(150 / binHz)
+        let midBins = Int(2000 / binHz)
         // номер ноты для каждого бина (80 Гц … 2.5 кГц)
         let noteOfBin: [Int] = (0..<half).map { k in
             let f = Float(k) * binHz
@@ -359,7 +375,7 @@ enum BeatAnalyzer {
                         vDSP_zvabs(&split, 1, &mag, 1, vDSP_Length(half))
                     }
                 }
-                var fl: Float = 0, lfl: Float = 0, e: Float = 0, le: Float = 0
+                var fl: Float = 0, lfl: Float = 0, e: Float = 0, le: Float = 0, me: Float = 0, he: Float = 0
                 for k in 1..<half {
                     let m = log1p(mag[k] * 10)
                     let d = m - prev[k]
@@ -367,15 +383,16 @@ enum BeatAnalyzer {
                     prev[k] = m
                     let p = mag[k] * mag[k]
                     e += p
-                    if k <= lowBins { le += p }
+                    if k <= lowBins { le += p } else if k <= midBins { me += p } else { he += p }
                     let note = noteOfBin[k]
                     if note >= 0 { chroma[note] += mag[k] }
                 }
                 flux[f] = fl; lowFlux[f] = lfl
                 rms[f] = sqrt(e / Float(half)); lowRMS[f] = sqrt(le / Float(max(1, lowBins)))
+                midRMS[f] = sqrt(me / Float(max(1, midBins - lowBins))); highRMS[f] = sqrt(he / Float(max(1, half - midBins)))
             }
         }
-        return Spec(flux: flux, lowFlux: lowFlux, rms: rms, lowRMS: lowRMS, chroma: chroma)
+        return Spec(flux: flux, lowFlux: lowFlux, rms: rms, lowRMS: lowRMS, chroma: chroma, midRMS: midRMS, highRMS: highRMS)
     }
 
     /// Хрома (12 нот) по FFT 4096 — достаточно точно для нот от 65 Гц.

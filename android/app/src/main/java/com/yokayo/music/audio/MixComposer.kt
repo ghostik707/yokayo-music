@@ -24,6 +24,13 @@ class Lane(v: Float, private val log: Boolean = false) {
         return if (log) a * (b / a).pow(t) else a + (b - a) * t
     }
 
+    companion object {
+        /** Кривая из готовых точек (для TransitionNet). */
+        fun of(p: DoubleArray, v: FloatArray, log: Boolean) = Lane(v[0], log).also { l ->
+            l.pts.clear(); l.vals.clear(); l.pts.addAll(p.toList()); l.vals.addAll(v.toList())
+        }
+    }
+
     /** От текущего значения к `v` между долями; всё, что было после `start`, заменяется. */
     fun ramp(v: Float, start: Double, end: Double, shape: Double = 1.0) {
         val v0 = at(start)
